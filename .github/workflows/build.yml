@@ -94,6 +94,9 @@ jobs:
           Write-Host "已有的 PlatformToolsets:"
           Get-ChildItem "$vsMSBuildDir\Microsoft\VC\v170\Platforms\x64\PlatformToolsets" -Directory -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.Name)" }
         }
+
+        # 设置 WDK 环境变量供后续步骤使用
+        echo "WDKContentRoot=$wdkRoot\" >> $env:GITHUB_ENV
       shell: pwsh
 
     - name: Setup MSBuild
@@ -120,12 +123,15 @@ jobs:
       shell: pwsh
 
     - name: Build driver
+      env:
+        WDKContentRoot: C:\Program Files (x86)\Windows Kits\10\
       run: |
         msbuild driver\DDCBrightness.vcxproj `
           /p:Configuration=${{ env.BUILD_CONFIGURATION }} `
           /p:Platform=${{ env.BUILD_PLATFORM }} `
           /p:SignMode=TestSign `
-          /p:TestCertificate=${{ env.CERT_THUMBPRINT }}
+          /p:TestCertificate=${{ env.CERT_THUMBPRINT }} `
+          /verbosity:normal
       shell: pwsh
 
     - name: Build service
