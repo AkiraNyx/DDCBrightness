@@ -66,6 +66,8 @@ jobs:
           # 使用 robocopy 合并目录 (Copy-Item 不能正确合并已有目录树)
           $srcNative = [System.IO.Path]::GetFullPath($msbuildSrc)
           robocopy "$srcNative" "$vsMSBuildDir" /E /NFL /NDL /NJH /NJS /NC /NS
+          if ($LASTEXITCODE -ge 8) { Write-Error "robocopy 失败, 退出码: $LASTEXITCODE"; exit 1 }
+          $global:LASTEXITCODE = 0
           Write-Host "MSBuild 目标文件部署成功 (robocopy)"
         } else {
           Write-Host "未找到 `$MSBuild 目录, 尝试其他目录名..."
