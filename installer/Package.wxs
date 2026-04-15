@@ -43,6 +43,9 @@
     <MajorUpgrade DowngradeErrorMessage="A newer version is already installed."
                   Schedule="afterInstallInitialize" />
 
+    <!-- 将 cab 嵌入 MSI，用户只需一个文件 -->
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
     <!-- Install directories -->
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="DDCBrightness">

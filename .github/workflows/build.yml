@@ -217,6 +217,22 @@ jobs:
         name: DDCBrightness-Release-x64
         path: release-files
 
+    - name: Prepare release assets
+      run: |
+        mkdir -p release-assets
+
+        # 复制 MSI 到发布目录
+        cp release-files/build/Release/x64/DDCBrightness-Setup.msi release-assets/
+
+        # 打包 ZIP (手动安装包: 驱动+服务+工具+证书+INF)
+        mkdir -p DDCBrightness
+        cp release-files/build/Release/x64/DDCBrightness.sys DDCBrightness/
+        cp release-files/build/Release/x64/DDCBrightnessService.exe DDCBrightness/
+        cp release-files/build/Release/x64/ddc_test.exe DDCBrightness/
+        cp release-files/build/DDCBrightness-test.cer DDCBrightness/
+        cp release-files/driver/DDCBrightness.inf DDCBrightness/
+        cd DDCBrightness && zip -r ../release-assets/DDCBrightness-x64.zip . && cd ..
+
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
@@ -224,11 +240,12 @@ jobs:
         draft: true
         generate_release_notes: true
         files: |
-          release-files/**/*.msi
-          release-files/**/*.exe
-          release-files/**/*.sys
-          release-files/**/*.cer
-          release-files/**/*.inf
+          release-assets/**/*.msi
+          release-assets/**/*.zip
+          release-assets/**/*.exe
+          release-assets/**/*.sys
+          release-assets/**/*.cer
+          release-assets/**/*.inf
         body: |
           ## DDCBrightness ${{ github.ref_name }}
 
