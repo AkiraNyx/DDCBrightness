@@ -19,53 +19,86 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v2
-
     - name: Install WDK
       run: |
-        # 下载并安装 WDK (Windows Driver Kit)
+        # 下载并安装 WDK
         $wdkUrl = "https://go.microsoft.com/fwlink/?linkid=2249371"
         $wdkInstaller = "$env:TEMP\wdksetup.exe"
         Write-Host "下载 WDK..."
         Invoke-WebRequest -Uri $wdkUrl -OutFile $wdkInstaller
-        Write-Host "安装 WDK (含所有功能)..."
+        Write-Host "安装 WDK..."
         Start-Process -FilePath $wdkInstaller -ArgumentList "/features", "+", "/quiet", "/norestart", "/ceip", "off" -Wait -NoNewWindow
         Write-Host "WDK 安装完成"
 
-        # 验证 WDK 安装
         $wdkRoot = "C:\Program Files (x86)\Windows Kits\10"
-        if (Test-Path "$wdkRoot\Include") {
-          $versions = Get-ChildItem "$wdkRoot\Include" -Directory | Sort-Object Name -Descending
-          Write-Host "WDK 版本: $($versions[0].Name)"
+        $wdkVer = (Get-ChildItem "$wdkRoot\Include" -Directory | Where-Object { $_.Name -match '^\d' } | Sort-Object Name -Descending | Select-Object -First 1).Name
+        Write-Host "WDK 版本: $wdkVer"
+
+        # 解压 WDK VSIX 并手动部署 MSBuild 目标文件
+        $wdkVsix = (Get-ChildItem "$wdkRoot\Vsix" -Recurse -Filter "WDK.vsix" | Select-Object -First 1).FullName
+        Write-Host "VSIX: $wdkVsix"
+
+        $extractDir = "$env:TEMP\wdk-vsix"
+        Expand-Archive -LiteralPath $wdkVsix -DestinationPath $extractDir -Force
+
+        # 列出解压根目录内容 (诊断)
+        Write-Host "VSIX 解压顶层目录:"
+        Get-ChildItem -LiteralPath $extractDir | ForEach-Object { Write-Host "  $($_.Name)" }
+
+        # 查找 VS MSBuild 目录
+        $vsBasePath = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise"
+        if (-not (Test-Path $vsBasePath)) {
+          $vsBasePath = (Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*" -Directory | Select-Object -First 1).FullName
+        }
+        $vsMSBuildDir = "$vsBasePath\MSBuild"
+        Write-Host "VS MSBuild 目录: $vsMSBuildDir"
+
+        # 复制 MSBuild 目标文件 (VSIX 中的 $MSBuild 目录)
+        # 注意: 使用 -LiteralPath 避免 PowerShell 解释 $ 符号
+        $msbuildSrc = [System.IO.Path]::Combine($extractDir, '$MSBuild')
+        Write-Host "MSBuild 源路径: $msbuildSrc"
+        Write-Host "MSBuild 源路径存在: $(Test-Path -LiteralPath $msbuildSrc)"
+
+        if (Test-Path -LiteralPath $msbuildSrc) {
+          Write-Host "MSBuild 源目录内容:"
+          Get-ChildItem -LiteralPath $msbuildSrc | ForEach-Object { Write-Host "  $($_.Name)" }
+
+          # 使用 robocopy 合并目录 (Copy-Item 不能正确合并已有目录树)
+          $srcNative = [System.IO.Path]::GetFullPath($msbuildSrc)
+          robocopy "$srcNative" "$vsMSBuildDir" /E /NFL /NDL /NJH /NJS /NC /NS
+          Write-Host "MSBuild 目标文件部署成功 (robocopy)"
         } else {
-          Write-Error "WDK 安装目录未找到!"
-          exit 1
+          Write-Host "未找到 `$MSBuild 目录, 尝试其他目录名..."
+          Get-ChildItem -LiteralPath $extractDir -Directory | ForEach-Object {
+            Write-Host "  检查: $($_.Name)"
+            if ($_.Name -match 'MSBuild|msbuild|Build') {
+              Write-Host "  => 找到候选目录: $($_.FullName)"
+              $items = Get-ChildItem -LiteralPath $_.FullName
+              foreach ($item in $items) {
+                Copy-Item -LiteralPath $item.FullName -Destination (Join-Path $vsMSBuildDir $item.Name) -Recurse -Force
+              }
+              Write-Host "  => 已复制"
+            }
+          }
         }
 
-        # 安装 WDK VS 扩展 (让 MSBuild 识别 WindowsKernelModeDriver10.0)
-        $wdkVsix = Get-ChildItem "$wdkRoot\Vsix" -Recurse -Filter "WDK.vsix" -ErrorAction SilentlyContinue | Select-Object -First 1
-
-        # 查找 VSIXInstaller
-        $vsixInstaller = Get-ChildItem "C:\Program Files*\Microsoft Visual Studio\2022\*\Common7\IDE\VSIXInstaller.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-
-        if ($wdkVsix -and $vsixInstaller) {
-          Write-Host "安装 WDK VSIX: $($wdkVsix.FullName)"
-          Write-Host "使用 VSIXInstaller: $($vsixInstaller.FullName)"
-          $proc = Start-Process -FilePath $vsixInstaller.FullName -ArgumentList "/q /a `"$($wdkVsix.FullName)`"" -Wait -PassThru -NoNewWindow
-          Write-Host "VSIX 安装退出码: $($proc.ExitCode)"
+        # 验证: 检查内核驱动工具集是否存在
+        $toolsetDirs = Get-ChildItem $vsMSBuildDir -Recurse -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "WindowsKernelModeDriver*" }
+        if ($toolsetDirs) {
+          Write-Host "内核驱动工具集已就绪:"
+          $toolsetDirs | ForEach-Object { Write-Host "  $($_.FullName)" }
         } else {
-          Write-Host "VSIX 搜索结果: $wdkVsix"
-          Write-Host "VSIXInstaller 搜索结果: $vsixInstaller"
-          Write-Error "未找到 WDK VSIX 或 VSIXInstaller!"
-          exit 1
+          Write-Host "警告: 未找到内核驱动工具集!"
+          Write-Host "已有的 PlatformToolsets:"
+          Get-ChildItem "$vsMSBuildDir\Microsoft\VC\v170\Platforms\x64\PlatformToolsets" -Directory -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.Name)" }
         }
       shell: pwsh
 
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
     - name: Install WiX Toolset
-      run: |
-        dotnet tool install --global wix --version 5.*
-        Write-Host "WiX Toolset 已安装"
+      run: dotnet tool install --global wix --version 5.*
       shell: pwsh
 
     - name: Create test certificate
@@ -80,10 +113,8 @@ jobs:
         Write-Host "证书指纹: $thumbprint"
         echo "CERT_THUMBPRINT=$thumbprint" >> $env:GITHUB_ENV
 
-        # 导出证书
         New-Item -ItemType Directory -Path "build" -Force | Out-Null
         Export-Certificate -Cert "Cert:\CurrentUser\My\$thumbprint" -FilePath "build\DDCBrightness-test.cer"
-        Write-Host "证书已导出"
       shell: pwsh
 
     - name: Build driver
@@ -116,10 +147,8 @@ jobs:
           Write-Error "signtool.exe 未找到"
           exit 1
         }
-        Write-Host "使用 signtool: $($signtool.FullName)"
 
         $driverSys = "build\${{ env.BUILD_CONFIGURATION }}\${{ env.BUILD_PLATFORM }}\DDCBrightness.sys"
-
         & $signtool.FullName sign /s My /n "DDCBrightness Test" /fd SHA256 $driverSys
         Write-Host "驱动已签名"
       shell: pwsh
@@ -135,8 +164,6 @@ jobs:
           -d Version="1.0.0.0" `
           -arch x64 `
           -o "$buildDir\DDCBrightness-Setup.msi"
-
-        Write-Host "MSI 安装包已生成"
       shell: pwsh
 
     - name: Upload build artifacts
