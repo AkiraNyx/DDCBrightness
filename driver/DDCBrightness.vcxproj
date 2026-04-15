@@ -20,6 +20,8 @@
     <WindowsTargetPlatformVersion>$(LatestTargetPlatformVersion)</WindowsTargetPlatformVersion>
     <!-- WDK 路径 (可通过环境变量覆盖) -->
     <WDKContentRoot Condition="'$(WDKContentRoot)' == ''">C:\Program Files (x86)\Windows Kits\10\</WDKContentRoot>
+    <!-- WDK km 头文件版本 (可能与 Windows SDK 版本不同) -->
+    <WDKVersion Condition="'$(WDKVersion)' == ''">$(WindowsTargetPlatformVersion)</WDKVersion>
     <KmdfVersionMajor>1</KmdfVersionMajor>
     <KmdfVersionMinor>33</KmdfVersionMinor>
   </PropertyGroup>
@@ -56,8 +58,8 @@
       <!-- WDK 内核模式头文件路径 -->
       <AdditionalIncludeDirectories>
         $(ProjectDir)..\common;
-        $(WDKContentRoot)Include\$(WindowsTargetPlatformVersion)\km;
-        $(WDKContentRoot)Include\$(WindowsTargetPlatformVersion)\shared;
+        $(WDKContentRoot)Include\$(WDKVersion)\km;
+        $(WDKContentRoot)Include\$(WDKVersion)\shared;
         $(WDKContentRoot)Include\wdf\kmdf\$(KmdfVersionMajor).$(KmdfVersionMinor);
         %(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
@@ -81,7 +83,7 @@
     <Link>
       <!-- 内核模式库路径 -->
       <AdditionalLibraryDirectories>
-        $(WDKContentRoot)Lib\$(WindowsTargetPlatformVersion)\km\x64;
+        $(WDKContentRoot)Lib\$(WDKVersion)\km\x64;
         $(WDKContentRoot)Lib\wdf\kmdf\x64\$(KmdfVersionMajor).$(KmdfVersionMinor);
         %(AdditionalLibraryDirectories)
       </AdditionalLibraryDirectories>
