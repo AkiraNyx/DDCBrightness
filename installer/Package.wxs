@@ -6,9 +6,10 @@
   安装内容:
   1. DDCBrightness.sys 驱动文件
   2. DDCBrightness.inf 驱动安装配置
-  3. DDCBrightnessService.exe 用户态服务
-  4. ddc_test.exe DDC/CI 测试工具
-  5. 测试证书
+  3. DDCBrightness.cat 驱动签名目录
+  4. DDCBrightnessService.exe 用户态服务
+  5. ddc_test.exe DDC/CI 测试工具
+  6. 测试证书
 
   安装动作:
   1. 复制文件到 Program Files
@@ -16,6 +17,10 @@
   3. 使用 pnputil 安装驱动
   4. 通过 CustomAction 追加 UpperFilters
   5. 安装并启动 Windows 服务
+
+  前置要求:
+  - 管理员权限
+  - 测试签名模式已启用 (bcdedit /set testsigning on)
 -->
 
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
@@ -43,7 +48,6 @@
     <MajorUpgrade DowngradeErrorMessage="A newer version is already installed."
                   Schedule="afterInstallInitialize" />
 
-    <!-- 将 cab 嵌入 MSI，用户只需一个文件 -->
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <!-- Install directories -->
@@ -64,7 +68,13 @@
 
       <Component Id="DriverInfComponent" Directory="DriversFolder" Bitness="always64">
         <File Id="DriverInf"
-              Source="$(InfFile)"
+              Source="$(BuildDir)\DDCBrightness.inf"
+              KeyPath="yes" />
+      </Component>
+
+      <Component Id="DriverCatComponent" Directory="DriversFolder" Bitness="always64">
+        <File Id="DriverCat"
+              Source="$(BuildDir)\DDCBrightness.cat"
               KeyPath="yes" />
       </Component>
 
@@ -81,7 +91,6 @@
                         Start="auto"
                         ErrorControl="normal"
                         Account="LocalSystem">
-          <!-- Allow service to interact with desktop for monitor enumeration -->
           <util:ServiceConfig FirstFailureActionType="restart"
                               SecondFailureActionType="restart"
                               ThirdFailureActionType="none"
@@ -120,13 +129,24 @@
 
     <!-- Custom Actions -->
 
-    <!-- Install test certificate -->
-    <SetProperty Id="InstallCert"
-                 Before="InstallCert"
+    <!-- Install test certificate to Root + TrustedPublisher -->
+    <SetProperty Id="InstallCertRoot"
+                 Before="InstallCertRoot"
+                 Sequence="execute"
+                 Value="&quot;[System64Folder]certutil.exe&quot; -addstore Root &quot;[DriversFolder]DDCBrightness-test.cer&quot;" />
+
+    <CustomAction Id="InstallCertRoot"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Impersonate="no"
+                  BinaryRef="Wix4UtilCA_X86" />
+
+    <SetProperty Id="InstallCertPublisher"
+                 Before="InstallCertPublisher"
                  Sequence="execute"
                  Value="&quot;[System64Folder]certutil.exe&quot; -addstore TrustedPublisher &quot;[DriversFolder]DDCBrightness-test.cer&quot;" />
 
-    <CustomAction Id="InstallCert"
+    <CustomAction Id="InstallCertPublisher"
                   DllEntry="WixQuietExec64"
                   Execute="deferred"
                   Impersonate="no"
@@ -184,8 +204,9 @@
 
     <!-- Install sequence -->
     <InstallExecuteSequence>
-      <Custom Action="InstallCert" After="InstallFiles" Condition="NOT REMOVE" />
-      <Custom Action="InstallDriver" After="InstallCert" Condition="NOT REMOVE" />
+      <Custom Action="InstallCertRoot" After="InstallFiles" Condition="NOT REMOVE" />
+      <Custom Action="InstallCertPublisher" After="InstallCertRoot" Condition="NOT REMOVE" />
+      <Custom Action="InstallDriver" After="InstallCertPublisher" Condition="NOT REMOVE" />
       <Custom Action="AddUpperFilter" After="InstallDriver" Condition="NOT REMOVE" />
       <Custom Action="RemoveUpperFilter" Before="RemoveFiles" Condition="REMOVE" />
       <Custom Action="UninstallDriver" After="RemoveUpperFilter" Condition="REMOVE" />

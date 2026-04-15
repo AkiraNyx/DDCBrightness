@@ -163,17 +163,44 @@ jobs:
           /p:Platform=${{ env.BUILD_PLATFORM }}
       shell: pwsh
 
-    - name: Sign driver
+    - name: Create catalog and sign driver
       run: |
+        $buildDir = "build\${{ env.BUILD_CONFIGURATION }}\${{ env.BUILD_PLATFORM }}"
+
+        # 复制 INF 到构建输出目录 (inf2cat 需要 INF 和 SYS 在同一目录)
+        Copy-Item "driver\DDCBrightness.inf" "$buildDir\DDCBrightness.inf"
+
+        # 查找工具
         $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
-        if (-not $signtool) {
-          Write-Error "signtool.exe 未找到"
-          exit 1
+        $inf2cat = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\*\inf2cat.exe" -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+
+        if (-not $signtool) { Write-Error "signtool.exe not found"; exit 1 }
+        if (-not $inf2cat) { Write-Error "inf2cat.exe not found"; exit 1 }
+
+        Write-Host "signtool: $($signtool.FullName)"
+        Write-Host "inf2cat: $($inf2cat.FullName)"
+
+        # 生成 .cat 文件
+        & $inf2cat.FullName /driver:"$buildDir" /os:10_x64 /verbose
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "inf2cat failed, trying with usgn flag..."
+          & $inf2cat.FullName /driver:"$buildDir" /os:10_x64 /uselocaltime /verbose
         }
 
-        $driverSys = "build\${{ env.BUILD_CONFIGURATION }}\${{ env.BUILD_PLATFORM }}\DDCBrightness.sys"
+        # 签名 .cat 文件
+        $catFile = "$buildDir\DDCBrightness.cat"
+        if (Test-Path $catFile) {
+          & $signtool.FullName sign /s My /n "DDCBrightness Test" /fd SHA256 $catFile
+          Write-Host "cat file signed"
+        } else {
+          Write-Host "WARNING: .cat file not generated, listing build dir:"
+          Get-ChildItem $buildDir | ForEach-Object { Write-Host "  $($_.Name)" }
+        }
+
+        # 签名 .sys 文件
+        $driverSys = "$buildDir\DDCBrightness.sys"
         & $signtool.FullName sign /s My /n "DDCBrightness Test" /fd SHA256 $driverSys
-        Write-Host "驱动已签名"
+        Write-Host "driver signed"
       shell: pwsh
 
     - name: Build MSI installer
@@ -185,7 +212,6 @@ jobs:
           -ext WixToolset.Util.wixext `
           -d BuildDir="$buildDir" `
           -d CertFile="build\DDCBrightness-test.cer" `
-          -d InfFile="driver\DDCBrightness.inf" `
           -d Version="1.0.0.0" `
           -arch x64 `
           -o "$buildDir\DDCBrightness-Setup.msi"
@@ -197,11 +223,12 @@ jobs:
         name: DDCBrightness-${{ env.BUILD_CONFIGURATION }}-${{ env.BUILD_PLATFORM }}
         path: |
           build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/DDCBrightness.sys
+          build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/DDCBrightness.cat
+          build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/DDCBrightness.inf
           build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/DDCBrightnessService.exe
           build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/ddc_test.exe
           build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/DDCBrightness-Setup.msi
           build/DDCBrightness-test.cer
-          driver/DDCBrightness.inf
 
   release:
     needs: build
@@ -224,13 +251,14 @@ jobs:
         # 复制 MSI 到发布目录
         cp release-files/build/Release/x64/DDCBrightness-Setup.msi release-assets/
 
-        # 打包 ZIP (手动安装包: 驱动+服务+工具+证书+INF)
+        # 打包 ZIP (手动安装包: 驱动+服务+工具+证书+INF+CAT)
         mkdir -p DDCBrightness
         cp release-files/build/Release/x64/DDCBrightness.sys DDCBrightness/
+        cp release-files/build/Release/x64/DDCBrightness.cat DDCBrightness/ || true
+        cp release-files/build/Release/x64/DDCBrightness.inf DDCBrightness/
         cp release-files/build/Release/x64/DDCBrightnessService.exe DDCBrightness/
         cp release-files/build/Release/x64/ddc_test.exe DDCBrightness/
         cp release-files/build/DDCBrightness-test.cer DDCBrightness/
-        cp release-files/driver/DDCBrightness.inf DDCBrightness/
         cd DDCBrightness && zip -r ../release-assets/DDCBrightness-x64.zip . && cd ..
 
     - name: Create GitHub Release
