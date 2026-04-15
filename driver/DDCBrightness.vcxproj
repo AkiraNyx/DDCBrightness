@@ -13,76 +13,113 @@
 
   <PropertyGroup Label="Globals">
     <ProjectGuid>{B1234567-AAAA-BBBB-CCCC-DDDDDDDDDDDD}</ProjectGuid>
-    <TemplateGuid>{1bc93793-694f-48fe-9372-81e2b05556fd}</TemplateGuid>
     <RootNamespace>DDCBrightness</RootNamespace>
     <MinimumVisualStudioVersion>12.0</MinimumVisualStudioVersion>
     <ProjectVersion>1.0</ProjectVersion>
+    <!-- 使用最新的 Windows SDK 版本 -->
     <WindowsTargetPlatformVersion>$(LatestTargetPlatformVersion)</WindowsTargetPlatformVersion>
+    <!-- WDK 路径 (可通过环境变量覆盖) -->
+    <WDKContentRoot Condition="'$(WDKContentRoot)' == ''">C:\Program Files (x86)\Windows Kits\10\</WDKContentRoot>
+    <KmdfVersionMajor>1</KmdfVersionMajor>
+    <KmdfVersionMinor>33</KmdfVersionMinor>
   </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
 
   <!-- Debug x64 -->
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <TargetVersion>Windows10</TargetVersion>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
-    <ConfigurationType>Driver</ConfigurationType>
-    <DriverType>KMDF</DriverType>
-    <DriverTargetPlatform>Universal</DriverTargetPlatform>
-    <KMDF_VERSION_MAJOR>1</KMDF_VERSION_MAJOR>
-    <KMDF_VERSION_MINOR>33</KMDF_VERSION_MINOR>
+    <PlatformToolset>v143</PlatformToolset>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
   </PropertyGroup>
 
   <!-- Release x64 -->
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
-    <TargetVersion>Windows10</TargetVersion>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
-    <ConfigurationType>Driver</ConfigurationType>
-    <DriverType>KMDF</DriverType>
-    <DriverTargetPlatform>Universal</DriverTargetPlatform>
-    <KMDF_VERSION_MAJOR>1</KMDF_VERSION_MAJOR>
-    <KMDF_VERSION_MINOR>33</KMDF_VERSION_MINOR>
+    <PlatformToolset>v143</PlatformToolset>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
   </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
 
+  <!-- 输出配置: 生成 .sys 文件 -->
   <PropertyGroup>
     <OutDir>$(SolutionDir)build\$(Configuration)\$(Platform)\</OutDir>
     <IntDir>$(SolutionDir)build\intermediate\$(ProjectName)\$(Configuration)\$(Platform)\</IntDir>
+    <TargetName>DDCBrightness</TargetName>
+    <TargetExt>.sys</TargetExt>
   </PropertyGroup>
 
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+  <!-- 内核模式编译设置 (替代 WindowsKernelModeDriver10.0 工具集) -->
+  <ItemDefinitionGroup>
     <ClCompile>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <WppEnabled>false</WppEnabled>
+      <!-- WDK 内核模式头文件路径 -->
+      <AdditionalIncludeDirectories>
+        $(ProjectDir)..\common;
+        $(WDKContentRoot)Include\$(WindowsTargetPlatformVersion)\km;
+        $(WDKContentRoot)Include\$(WindowsTargetPlatformVersion)\shared;
+        $(WDKContentRoot)Include\wdf\kmdf\$(KmdfVersionMajor).$(KmdfVersionMinor);
+        %(AdditionalIncludeDirectories)
+      </AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>
+        _KERNEL_MODE;
+        _AMD64_;
+        AMD64;
+        KMDF_VERSION_MAJOR=$(KmdfVersionMajor);
+        KMDF_VERSION_MINOR=$(KmdfVersionMinor);
+        %(PreprocessorDefinitions)
+      </PreprocessorDefinitions>
+      <!-- 内核模式编译器标志 -->
+      <ExceptionHandling>false</ExceptionHandling>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary />
+      <AdditionalOptions>/kernel %(AdditionalOptions)</AdditionalOptions>
+      <WarningLevel>Level3</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <CompileAs>CompileAsC</CompileAs>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <!-- 内核模式库路径 -->
+      <AdditionalLibraryDirectories>
+        $(WDKContentRoot)Lib\$(WindowsTargetPlatformVersion)\km\x64;
+        $(WDKContentRoot)Lib\wdf\kmdf\x64\$(KmdfVersionMajor).$(KmdfVersionMinor);
+        %(AdditionalLibraryDirectories)
+      </AdditionalLibraryDirectories>
+      <!-- 内核模式库 -->
+      <AdditionalDependencies>
+        ntoskrnl.lib;
+        hal.lib;
+        BufferOverflowFastFailK.lib;
+        wdfldr.lib;
+        wdfdriverentry.lib;
+        %(AdditionalDependencies)
+      </AdditionalDependencies>
+      <!-- 内核模式链接器标志 -->
+      <SubSystem>Native</SubSystem>
+      <Driver>Driver</Driver>
+      <EntryPointSymbol>FxDriverEntry</EntryPointSymbol>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <NoEntryPoint>false</NoEntryPoint>
+      <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
+      <AdditionalOptions>/DRIVER /MERGE:_TEXT=.text /MERGE:_PAGE=PAGE %(AdditionalOptions)</AdditionalOptions>
     </Link>
-    <Inf>
-      <SpecifyArchitecture>true</SpecifyArchitecture>
-      <SpecifyDriverVerDirectiveVersion>true</SpecifyDriverVerDirectiveVersion>
-      <TimeStamp>1.0.0.0</TimeStamp>
-    </Inf>
   </ItemDefinitionGroup>
 
+  <!-- Debug 特有设置 -->
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>_DEBUG;DBG=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <!-- Release 特有设置 -->
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Optimization>MaxSpeed</Optimization>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <WppEnabled>false</WppEnabled>
     </ClCompile>
-    <Link>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
-    <Inf>
-      <SpecifyArchitecture>true</SpecifyArchitecture>
-      <SpecifyDriverVerDirectiveVersion>true</SpecifyDriverVerDirectiveVersion>
-      <TimeStamp>1.0.0.0</TimeStamp>
-    </Inf>
   </ItemDefinitionGroup>
 
   <ItemGroup>
@@ -93,10 +130,6 @@
   <ItemGroup>
     <ClInclude Include="driver.h" />
     <ClInclude Include="..\common\public.h" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Inf Include="DDCBrightness.inf" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
