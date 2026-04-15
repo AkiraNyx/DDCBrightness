@@ -124,7 +124,7 @@
     <SetProperty Id="InstallCert"
                  Before="InstallCert"
                  Sequence="execute"
-                 Value="&quot;[SystemFolder]certutil.exe&quot; -addstore TrustedPublisher &quot;[DriversFolder]DDCBrightness-test.cer&quot;" />
+                 Value="&quot;[System64Folder]certutil.exe&quot; -addstore TrustedPublisher &quot;[DriversFolder]DDCBrightness-test.cer&quot;" />
 
     <CustomAction Id="InstallCert"
                   DllEntry="WixQuietExec64"
@@ -136,7 +136,7 @@
     <SetProperty Id="InstallDriver"
                  Before="InstallDriver"
                  Sequence="execute"
-                 Value="&quot;[SystemFolder]pnputil.exe&quot; /add-driver &quot;[DriversFolder]DDCBrightness.inf&quot; /install" />
+                 Value="&quot;[System64Folder]pnputil.exe&quot; /add-driver &quot;[DriversFolder]DDCBrightness.inf&quot; /install" />
 
     <CustomAction Id="InstallDriver"
                   DllEntry="WixQuietExec64"
@@ -148,7 +148,7 @@
     <SetProperty Id="AddUpperFilter"
                  Before="AddUpperFilter"
                  Sequence="execute"
-                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -Command &quot;$k='HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e96e-e325-11ce-bfc1-08002be10318}';$v=@();try{$v=[string[]](Get-ItemProperty -Path $k -Name UpperFilters -EA Stop).UpperFilters}catch{};if($v -notcontains 'DDCBrightness'){$v+='DDCBrightness';Set-ItemProperty -Path $k -Name UpperFilters -Value $v -Type MultiString}&quot;" />
+                 Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -Command &quot;$k='HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e96e-e325-11ce-bfc1-08002be10318}';$v=@();try{$v=[string[]](Get-ItemProperty -Path $k -Name UpperFilters -EA Stop).UpperFilters}catch{};if($v -notcontains 'DDCBrightness'){$v+='DDCBrightness';Set-ItemProperty -Path $k -Name UpperFilters -Value $v -Type MultiString}&quot;" />
 
     <CustomAction Id="AddUpperFilter"
                   DllEntry="WixQuietExec64"
@@ -160,7 +160,7 @@
     <SetProperty Id="RemoveUpperFilter"
                  Before="RemoveUpperFilter"
                  Sequence="execute"
-                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -Command &quot;$k='HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e96e-e325-11ce-bfc1-08002be10318}';try{$v=[string[]](Get-ItemProperty -Path $k -Name UpperFilters -EA Stop).UpperFilters;$v=$v|?{$_ -ne 'DDCBrightness'};if($v.Count -gt 0){Set-ItemProperty -Path $k -Name UpperFilters -Value $v -Type MultiString}else{Remove-ItemProperty -Path $k -Name UpperFilters -EA SilentlyContinue}}catch{}&quot;" />
+                 Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -Command &quot;$k='HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e96e-e325-11ce-bfc1-08002be10318}';try{$v=[string[]](Get-ItemProperty -Path $k -Name UpperFilters -EA Stop).UpperFilters;$v=$v|?{$_ -ne 'DDCBrightness'};if($v.Count -gt 0){Set-ItemProperty -Path $k -Name UpperFilters -Value $v -Type MultiString}else{Remove-ItemProperty -Path $k -Name UpperFilters -EA SilentlyContinue}}catch{}&quot;" />
 
     <CustomAction Id="RemoveUpperFilter"
                   DllEntry="WixQuietExec64"
@@ -173,7 +173,7 @@
     <SetProperty Id="UninstallDriver"
                  Before="UninstallDriver"
                  Sequence="execute"
-                 Value="&quot;[SystemFolder]pnputil.exe&quot; /delete-driver DDCBrightness.inf /uninstall" />
+                 Value="&quot;[System64Folder]pnputil.exe&quot; /delete-driver DDCBrightness.inf /uninstall" />
 
     <CustomAction Id="UninstallDriver"
                   DllEntry="WixQuietExec64"
