@@ -116,7 +116,10 @@ jobs:
       uses: microsoft/setup-msbuild@v2
 
     - name: Install WiX Toolset
-      run: dotnet tool install --global wix --version 5.*
+      run: |
+        dotnet tool install --global wix --version 5.*
+        wix extension add WixToolset.UI.wixext
+        wix extension add WixToolset.Util.wixext
       shell: pwsh
 
     - name: Create test certificate
@@ -180,6 +183,8 @@ jobs:
         $buildDir = "build\${{ env.BUILD_CONFIGURATION }}\${{ env.BUILD_PLATFORM }}"
 
         wix build installer\Package.wxs `
+          -ext WixToolset.UI.wixext `
+          -ext WixToolset.Util.wixext `
           -d BuildDir="$buildDir" `
           -d CertFile="build\DDCBrightness-test.cer" `
           -d InfFile="driver\DDCBrightness.inf" `
