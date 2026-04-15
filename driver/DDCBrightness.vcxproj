@@ -104,6 +104,7 @@
       <NoEntryPoint>false</NoEntryPoint>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
       <AdditionalOptions>/DRIVER /MERGE:_TEXT=.text /MERGE:_PAGE=PAGE %(AdditionalOptions)</AdditionalOptions>
+      <GenerateManifest>false</GenerateManifest>
     </Link>
   </ItemDefinitionGroup>
 
