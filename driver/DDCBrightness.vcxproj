@@ -62,7 +62,6 @@
         %(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
       <PreprocessorDefinitions>
-        _KERNEL_MODE;
         _AMD64_;
         AMD64;
         KMDF_VERSION_MAJOR=$(KmdfVersionMajor);

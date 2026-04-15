@@ -97,6 +97,8 @@ jobs:
 
         # 设置 WDK 环境变量供后续步骤使用
         echo "WDKContentRoot=$wdkRoot\" >> $env:GITHUB_ENV
+        echo "WDK_VERSION=$wdkVer" >> $env:GITHUB_ENV
+        Write-Host "已设置 WDKContentRoot=$wdkRoot\ , WDK_VERSION=$wdkVer"
       shell: pwsh
 
     - name: Setup MSBuild
@@ -129,6 +131,7 @@ jobs:
         msbuild driver\DDCBrightness.vcxproj `
           /p:Configuration=${{ env.BUILD_CONFIGURATION }} `
           /p:Platform=${{ env.BUILD_PLATFORM }} `
+          /p:WindowsTargetPlatformVersion=${{ env.WDK_VERSION }} `
           /p:SignMode=TestSign `
           /p:TestCertificate=${{ env.CERT_THUMBPRINT }} `
           /verbosity:normal
