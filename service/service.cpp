@@ -111,6 +111,7 @@ static BOOL CALLBACK MonitorEnumCallback(
     }
 
     // 测试每个物理显示器的 DDC/CI 亮度控制
+    bool pmOwnershipTaken = false;
     for (DWORD i = 0; i < numPhysical && ctx->count < DDCBRT_MAX_MONITORS; i++) {
         DWORD minB = 0, curB = 0, maxB = 0;
         if (GetMonitorBrightness(pm[i].hPhysicalMonitor,
@@ -132,9 +133,15 @@ static BOOL CALLBACK MonitorEnumCallback(
                            _countof(g_Monitors[idx].description),
                            pm[i].szPhysicalMonitorDescription);
 
-            // 保存物理显示器数组 (用于后续清理)
-            g_PhysicalMonitors[idx] = pm;
-            g_PhysicalMonitorCounts[idx] = numPhysical;
+            // 仅第一个槽位持有 pm 数组的所有权 (负责清理)
+            if (!pmOwnershipTaken) {
+                g_PhysicalMonitors[idx] = pm;
+                g_PhysicalMonitorCounts[idx] = numPhysical;
+                pmOwnershipTaken = true;
+            } else {
+                g_PhysicalMonitors[idx] = NULL;
+                g_PhysicalMonitorCounts[idx] = 0;
+            }
 
             LogInfo("发现 DDC/CI 显示器 #%lu: %ls (%ls), "
                     "亮度范围: %lu-%lu, 当前: %lu",
@@ -142,11 +149,11 @@ static BOOL CALLBACK MonitorEnumCallback(
                     monInfo.szDevice, minB, maxB, curB);
 
             ctx->count++;
-            pm = NULL; // 防止释放 (句柄仍在使用)
         }
     }
 
-    if (pm) {
+    if (!pmOwnershipTaken) {
+        // 没有 DDC/CI 可用的显示器，释放 pm
         DestroyPhysicalMonitors(numPhysical, pm);
         free(pm);
     }
@@ -220,14 +227,20 @@ static bool RegisterMonitorWithDriver(HANDLE hDriver, MonitorDDCInfo *mon)
                    mon->description);
 
     DWORD bytesReturned = 0;
+    OVERLAPPED ov = {};
+    ov.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     BOOL ok = DeviceIoControl(
         hDriver,
         IOCTL_DDCBRT_REGISTER_MONITOR,
         &info, sizeof(info),
         NULL, 0,
         &bytesReturned,
-        NULL
+        &ov
     );
+    if (!ok && GetLastError() == ERROR_IO_PENDING) {
+        ok = GetOverlappedResult(hDriver, &ov, &bytesReturned, TRUE) ? TRUE : FALSE;
+    }
+    CloseHandle(ov.hEvent);
 
     if (ok) {
         LogInfo("显示器 #%lu '%ls' 已注册到驱动", mon->index, mon->description);
@@ -250,14 +263,20 @@ static void ReportBrightnessToDriver(HANDLE hDriver, DWORD monitorIndex,
     report.BrightnessPercent = brightnessPercent;
 
     DWORD bytesReturned = 0;
+    OVERLAPPED ov = {};
+    ov.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     DeviceIoControl(
         hDriver,
         IOCTL_DDCBRT_REPORT_BRIGHTNESS,
         &report, sizeof(report),
         NULL, 0,
         &bytesReturned,
-        NULL
+        &ov
     );
+    if (GetLastError() == ERROR_IO_PENDING) {
+        GetOverlappedResult(hDriver, &ov, &bytesReturned, TRUE);
+    }
+    CloseHandle(ov.hEvent);
 }
 
 //
@@ -362,8 +381,9 @@ static void BrightnessControlLoop(HANDLE hDriver)
                 }
             }
         } else if (waitResult == WAIT_OBJECT_0 + 1) {
-            // 停止事件
+            // 停止事件: 取消未完成的 I/O 并等待取消完成
             CancelIo(hDriver);
+            GetOverlappedResult(hDriver, &overlapped, &bytesReturned, TRUE);
             CloseHandle(overlapped.hEvent);
             break;
         }

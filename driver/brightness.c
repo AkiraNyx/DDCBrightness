@@ -32,29 +32,20 @@ DDCBrt_EvtIoDeviceControl(
     case IOCTL_VIDEO_QUERY_SUPPORTED_BRIGHTNESS:
         KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL,
                    "DDCBrightness: QUERY_SUPPORTED_BRIGHTNESS\n"));
-        status = DDCBrt_HandleQuerySupportedBrightness(Request, deviceContext);
-        if (NT_SUCCESS(status)) {
-            return; // 请求已完成
-        }
-        break;
+        DDCBrt_HandleQuerySupportedBrightness(Request, deviceContext);
+        return; // Handle 函数已完成请求
 
     case IOCTL_VIDEO_QUERY_DISPLAY_BRIGHTNESS:
         KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL,
                    "DDCBrightness: QUERY_DISPLAY_BRIGHTNESS\n"));
-        status = DDCBrt_HandleQueryDisplayBrightness(Request, deviceContext);
-        if (NT_SUCCESS(status)) {
-            return;
-        }
-        break;
+        DDCBrt_HandleQueryDisplayBrightness(Request, deviceContext);
+        return;
 
     case IOCTL_VIDEO_SET_DISPLAY_BRIGHTNESS:
         KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
                    "DDCBrightness: SET_DISPLAY_BRIGHTNESS\n"));
-        status = DDCBrt_HandleSetDisplayBrightness(Request, deviceContext);
-        if (NT_SUCCESS(status)) {
-            return;
-        }
-        break;
+        DDCBrt_HandleSetDisplayBrightness(Request, deviceContext);
+        return;
 
     default:
         // 不是亮度 IOCTL，下传给底层驱动
@@ -279,21 +270,25 @@ DDCBrt_EvtControlDeviceIoControl(
                 NULL
             );
 
-            if (NT_SUCCESS(status) && g_ControlDevice != NULL) {
-                PCONTROL_DEVICE_CONTEXT ctrlCtx =
-                    ControlGetDeviceContext(g_ControlDevice);
+            if (NT_SUCCESS(status)) {
+                if (g_ControlDevice == NULL) {
+                    status = STATUS_DEVICE_NOT_READY;
+                } else {
+                    PCONTROL_DEVICE_CONTEXT ctrlCtx =
+                        ControlGetDeviceContext(g_ControlDevice);
 
-                WdfSpinLockAcquire(ctrlCtx->Lock);
-                outputBuffer->Count = ctrlCtx->MonitorCount;
-                for (ULONG i = 0; i < ctrlCtx->MonitorCount &&
-                     i < DDCBRT_MAX_MONITORS; i++) {
-                    outputBuffer->Monitors[i] = ctrlCtx->Monitors[i].Info;
+                    WdfSpinLockAcquire(ctrlCtx->Lock);
+                    outputBuffer->Count = ctrlCtx->MonitorCount;
+                    for (ULONG i = 0; i < ctrlCtx->MonitorCount &&
+                         i < DDCBRT_MAX_MONITORS; i++) {
+                        outputBuffer->Monitors[i] = ctrlCtx->Monitors[i].Info;
+                    }
+                    WdfSpinLockRelease(ctrlCtx->Lock);
+
+                    WdfRequestCompleteWithInformation(
+                        Request, STATUS_SUCCESS, sizeof(DDCBRT_MONITOR_LIST));
+                    return;
                 }
-                WdfSpinLockRelease(ctrlCtx->Lock);
-
-                WdfRequestCompleteWithInformation(
-                    Request, STATUS_SUCCESS, sizeof(DDCBRT_MONITOR_LIST));
-                return;
             }
         }
         break;
@@ -344,7 +339,15 @@ DDCBrt_HandleRegisterMonitor(
     }
 
     // 查找空闲槽位
-    ULONG slot = ctrlCtx->MonitorCount;
+    ULONG slot = DDCBRT_MAX_MONITORS;
+    for (ULONG i = 0; i < DDCBRT_MAX_MONITORS; i++) {
+        if (!ctrlCtx->Monitors[i].Active) { slot = i; break; }
+    }
+    if (slot >= DDCBRT_MAX_MONITORS) {
+        WdfSpinLockRelease(ctrlCtx->Lock);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
     ctrlCtx->Monitors[slot].Active = TRUE;
     ctrlCtx->Monitors[slot].Info = *inputBuffer;
     ctrlCtx->Monitors[slot].CurrentBrightnessPercent =
@@ -355,7 +358,17 @@ DDCBrt_HandleRegisterMonitor(
         ctrlCtx->Monitors[slot].CurrentBrightnessPercent;
     ctrlCtx->Monitors[slot].DCBrightness =
         ctrlCtx->Monitors[slot].CurrentBrightnessPercent;
-    ctrlCtx->MonitorCount++;
+    if (slot >= ctrlCtx->MonitorCount) {
+        ctrlCtx->MonitorCount = slot + 1;
+    }
+
+    // 在释放锁之前获取需要同步到过滤设备的数据
+    UCHAR cachedBrightness = ctrlCtx->Monitors[slot].CurrentBrightnessPercent;
+    ULONG cachedMonitorCount = ctrlCtx->MonitorCount;
+    WDFDEVICE filterDevice = NULL;
+    if (ctrlCtx->FilterDeviceCount > 0) {
+        filterDevice = ctrlCtx->FilterDevices[0];
+    }
 
     WdfSpinLockRelease(ctrlCtx->Lock);
 
@@ -367,9 +380,8 @@ DDCBrt_HandleRegisterMonitor(
                inputBuffer->MaxBrightness,
                inputBuffer->CurrentBrightness));
 
-    // 同时更新过滤设备的状态
-    if (ctrlCtx->FilterDeviceCount > 0) {
-        WDFDEVICE filterDevice = ctrlCtx->FilterDevices[0];
+    // 同步到过滤设备
+    if (filterDevice != NULL) {
         PFILTER_DEVICE_CONTEXT filterCtx =
             FilterGetDeviceContext(filterDevice);
 
@@ -377,13 +389,10 @@ DDCBrt_HandleRegisterMonitor(
         if (slot < DDCBRT_MAX_MONITORS) {
             filterCtx->Monitors[slot].Active = TRUE;
             filterCtx->Monitors[slot].Info = *inputBuffer;
-            filterCtx->Monitors[slot].CurrentBrightnessPercent =
-                ctrlCtx->Monitors[slot].CurrentBrightnessPercent;
-            filterCtx->Monitors[slot].ACBrightness =
-                ctrlCtx->Monitors[slot].ACBrightness;
-            filterCtx->Monitors[slot].DCBrightness =
-                ctrlCtx->Monitors[slot].DCBrightness;
-            filterCtx->MonitorCount = ctrlCtx->MonitorCount;
+            filterCtx->Monitors[slot].CurrentBrightnessPercent = cachedBrightness;
+            filterCtx->Monitors[slot].ACBrightness = cachedBrightness;
+            filterCtx->Monitors[slot].DCBrightness = cachedBrightness;
+            filterCtx->MonitorCount = cachedMonitorCount;
         }
         WdfSpinLockRelease(filterCtx->Lock);
     }
@@ -512,20 +521,22 @@ DDCBrt_HandleReportBrightness(
     WdfSpinLockAcquire(ctrlCtx->Lock);
 
     ULONG index = inputBuffer->MonitorIndex;
+    UCHAR brightness = (UCHAR)inputBuffer->BrightnessPercent;
     if (index < DDCBRT_MAX_MONITORS && ctrlCtx->Monitors[index].Active) {
-        ctrlCtx->Monitors[index].CurrentBrightnessPercent =
-            (UCHAR)inputBuffer->BrightnessPercent;
-        ctrlCtx->Monitors[index].ACBrightness =
-            (UCHAR)inputBuffer->BrightnessPercent;
-        ctrlCtx->Monitors[index].DCBrightness =
-            (UCHAR)inputBuffer->BrightnessPercent;
+        ctrlCtx->Monitors[index].CurrentBrightnessPercent = brightness;
+        ctrlCtx->Monitors[index].ACBrightness = brightness;
+        ctrlCtx->Monitors[index].DCBrightness = brightness;
+    }
+
+    WDFDEVICE filterDevice = NULL;
+    if (ctrlCtx->FilterDeviceCount > 0) {
+        filterDevice = ctrlCtx->FilterDevices[0];
     }
 
     WdfSpinLockRelease(ctrlCtx->Lock);
 
     // 同步到过滤设备
-    if (ctrlCtx->FilterDeviceCount > 0) {
-        WDFDEVICE filterDevice = ctrlCtx->FilterDevices[0];
+    if (filterDevice != NULL) {
         PFILTER_DEVICE_CONTEXT filterCtx =
             FilterGetDeviceContext(filterDevice);
 

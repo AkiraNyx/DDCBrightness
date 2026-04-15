@@ -9,6 +9,7 @@
 #include <initguid.h>
 #include <ntddvdeo.h>
 #include <ntstrsafe.h>
+#include <wdmsec.h>
 
 #include "../common/public.h"
 

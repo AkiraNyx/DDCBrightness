@@ -50,6 +50,7 @@
     <IntDir>$(SolutionDir)build\intermediate\$(ProjectName)\$(Configuration)\$(Platform)\</IntDir>
     <TargetName>DDCBrightness</TargetName>
     <TargetExt>.sys</TargetExt>
+    <GenerateManifest>false</GenerateManifest>
   </PropertyGroup>
 
   <!-- 内核模式编译设置 (替代 WindowsKernelModeDriver10.0 工具集) -->
@@ -94,6 +95,7 @@
         BufferOverflowFastFailK.lib;
         wdfldr.lib;
         wdfdriverentry.lib;
+        wdmsec.lib;
         %(AdditionalDependencies)
       </AdditionalDependencies>
       <!-- 内核模式链接器标志 -->
@@ -103,8 +105,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <NoEntryPoint>false</NoEntryPoint>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
-      <AdditionalOptions>/DRIVER /MERGE:_TEXT=.text /MERGE:_PAGE=PAGE %(AdditionalOptions)</AdditionalOptions>
-      <GenerateManifest>false</GenerateManifest>
+      <AdditionalOptions>/DRIVER /MANIFEST:NO /MERGE:_TEXT=.text /MERGE:_PAGE=PAGE %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
 
