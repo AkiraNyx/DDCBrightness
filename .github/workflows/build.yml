@@ -8,7 +8,6 @@ on:
     branches: [ main ]
 
 env:
-  SOLUTION_FILE: DDCBrightness/DDCBrightness.sln
   BUILD_CONFIGURATION: Release
   BUILD_PLATFORM: x64
 
@@ -52,7 +51,6 @@ jobs:
 
     - name: Create test certificate
       run: |
-        # 创建自签名测试证书
         $cert = New-SelfSignedCertificate `
           -Type CodeSigningCert `
           -Subject "CN=DDCBrightness Test, O=DDCBrightness Project" `
@@ -63,16 +61,15 @@ jobs:
         Write-Host "证书指纹: $thumbprint"
         echo "CERT_THUMBPRINT=$thumbprint" >> $env:GITHUB_ENV
 
-        # 导出证书 (用于安装包)
-        $certPath = "DDCBrightness\build\DDCBrightness-test.cer"
-        New-Item -ItemType Directory -Path "DDCBrightness\build" -Force | Out-Null
-        Export-Certificate -Cert "Cert:\CurrentUser\My\$thumbprint" -FilePath $certPath
-        Write-Host "证书已导出到 $certPath"
+        # 导出证书
+        New-Item -ItemType Directory -Path "build" -Force | Out-Null
+        Export-Certificate -Cert "Cert:\CurrentUser\My\$thumbprint" -FilePath "build\DDCBrightness-test.cer"
+        Write-Host "证书已导出"
       shell: pwsh
 
     - name: Build driver
       run: |
-        msbuild DDCBrightness\driver\DDCBrightness.vcxproj `
+        msbuild driver\DDCBrightness.vcxproj `
           /p:Configuration=${{ env.BUILD_CONFIGURATION }} `
           /p:Platform=${{ env.BUILD_PLATFORM }} `
           /p:SignMode=TestSign `
@@ -81,14 +78,14 @@ jobs:
 
     - name: Build service
       run: |
-        msbuild DDCBrightness\service\DDCBrightnessService.vcxproj `
+        msbuild service\DDCBrightnessService.vcxproj `
           /p:Configuration=${{ env.BUILD_CONFIGURATION }} `
           /p:Platform=${{ env.BUILD_PLATFORM }}
       shell: pwsh
 
     - name: Build test tool
       run: |
-        msbuild DDCBrightness\tools\DDCTest.vcxproj `
+        msbuild tools\DDCTest.vcxproj `
           /p:Configuration=${{ env.BUILD_CONFIGURATION }} `
           /p:Platform=${{ env.BUILD_PLATFORM }}
       shell: pwsh
@@ -102,7 +99,7 @@ jobs:
         }
         Write-Host "使用 signtool: $($signtool.FullName)"
 
-        $driverSys = "DDCBrightness\build\${{ env.BUILD_CONFIGURATION }}\${{ env.BUILD_PLATFORM }}\DDCBrightness.sys"
+        $driverSys = "build\${{ env.BUILD_CONFIGURATION }}\${{ env.BUILD_PLATFORM }}\DDCBrightness.sys"
 
         & $signtool.FullName sign /s My /n "DDCBrightness Test" /fd SHA256 $driverSys
         Write-Host "驱动已签名"
@@ -110,12 +107,12 @@ jobs:
 
     - name: Build MSI installer
       run: |
-        $buildDir = "DDCBrightness\build\${{ env.BUILD_CONFIGURATION }}\${{ env.BUILD_PLATFORM }}"
+        $buildDir = "build\${{ env.BUILD_CONFIGURATION }}\${{ env.BUILD_PLATFORM }}"
 
-        wix build DDCBrightness\installer\Package.wxs `
+        wix build installer\Package.wxs `
           -d BuildDir="$buildDir" `
-          -d CertFile="DDCBrightness\build\DDCBrightness-test.cer" `
-          -d InfFile="DDCBrightness\driver\DDCBrightness.inf" `
+          -d CertFile="build\DDCBrightness-test.cer" `
+          -d InfFile="driver\DDCBrightness.inf" `
           -d Version="1.0.0.0" `
           -arch x64 `
           -o "$buildDir\DDCBrightness-Setup.msi"
@@ -128,12 +125,12 @@ jobs:
       with:
         name: DDCBrightness-${{ env.BUILD_CONFIGURATION }}-${{ env.BUILD_PLATFORM }}
         path: |
-          DDCBrightness/build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/DDCBrightness.sys
-          DDCBrightness/build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/DDCBrightnessService.exe
-          DDCBrightness/build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/ddc_test.exe
-          DDCBrightness/build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/DDCBrightness-Setup.msi
-          DDCBrightness/build/DDCBrightness-test.cer
-          DDCBrightness/driver/DDCBrightness.inf
+          build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/DDCBrightness.sys
+          build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/DDCBrightnessService.exe
+          build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/ddc_test.exe
+          build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/DDCBrightness-Setup.msi
+          build/DDCBrightness-test.cer
+          driver/DDCBrightness.inf
 
   release:
     needs: build
