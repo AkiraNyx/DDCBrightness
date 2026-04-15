@@ -31,8 +31,19 @@ jobs:
         Write-Host "WDK 安装完成"
 
         $wdkRoot = "C:\Program Files (x86)\Windows Kits\10"
-        $wdkVer = (Get-ChildItem "$wdkRoot\Include" -Directory | Where-Object { $_.Name -match '^\d' } | Sort-Object Name -Descending | Select-Object -First 1).Name
-        Write-Host "WDK 版本: $wdkVer"
+        # 检测包含 km 目录的 WDK 版本 (区别于预装的 Windows SDK)
+        $wdkVer = (Get-ChildItem "$wdkRoot\Include" -Directory | Where-Object { Test-Path "$($_.FullName)\km" } | Sort-Object Name -Descending | Select-Object -First 1).Name
+        if (-not $wdkVer) {
+          Write-Host "Include 目录内容:"
+          Get-ChildItem "$wdkRoot\Include" -Directory | ForEach-Object {
+            $subs = (Get-ChildItem $_.FullName -Directory).Name -join ", "
+            Write-Host "  $($_.Name): [$subs]"
+          }
+          Write-Error "未找到包含 km 目录的 WDK 版本!"
+          exit 1
+        }
+        Write-Host "WDK 版本 (含 km): $wdkVer"
+        Write-Host "ntddk.h: $(Test-Path "$wdkRoot\Include\$wdkVer\km\ntddk.h")"
 
         # 解压 WDK VSIX 并手动部署 MSBuild 目标文件
         $wdkVsix = (Get-ChildItem "$wdkRoot\Vsix" -Recurse -Filter "WDK.vsix" | Select-Object -First 1).FullName
