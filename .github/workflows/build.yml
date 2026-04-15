@@ -44,19 +44,19 @@ jobs:
         }
 
         # 安装 WDK VS 扩展 (让 MSBuild 识别 WindowsKernelModeDriver10.0)
-        $vsixInstaller = "C:\Program Files (x86)\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\VSIXInstaller.exe"
-        $wdkVsix = Get-ChildItem "$wdkRoot\Vsix\VS2022\WDK.vsix" -ErrorAction SilentlyContinue
-        if (-not $wdkVsix) {
-          $wdkVsix = Get-ChildItem "$wdkRoot\Vsix\*\WDK.vsix" -ErrorAction SilentlyContinue | Select-Object -First 1
-        }
+        $wdkVsix = Get-ChildItem "$wdkRoot\Vsix" -Recurse -Filter "WDK.vsix" -ErrorAction SilentlyContinue | Select-Object -First 1
 
-        if ($wdkVsix -and (Test-Path $vsixInstaller)) {
+        # 查找 VSIXInstaller
+        $vsixInstaller = Get-ChildItem "C:\Program Files*\Microsoft Visual Studio\2022\*\Common7\IDE\VSIXInstaller.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+
+        if ($wdkVsix -and $vsixInstaller) {
           Write-Host "安装 WDK VSIX: $($wdkVsix.FullName)"
-          $proc = Start-Process -FilePath $vsixInstaller -ArgumentList "/q /a `"$($wdkVsix.FullName)`"" -Wait -PassThru -NoNewWindow
+          Write-Host "使用 VSIXInstaller: $($vsixInstaller.FullName)"
+          $proc = Start-Process -FilePath $vsixInstaller.FullName -ArgumentList "/q /a `"$($wdkVsix.FullName)`"" -Wait -PassThru -NoNewWindow
           Write-Host "VSIX 安装退出码: $($proc.ExitCode)"
         } else {
-          Write-Host "WDK VSIX 路径:"
-          Get-ChildItem "$wdkRoot\Vsix" -Recurse -Filter "*.vsix" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
+          Write-Host "VSIX 搜索结果: $wdkVsix"
+          Write-Host "VSIXInstaller 搜索结果: $vsixInstaller"
           Write-Error "未找到 WDK VSIX 或 VSIXInstaller!"
           exit 1
         }
