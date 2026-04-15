@@ -1,10 +1,13 @@
+### FUCK NVIDIA
+Windows 11 的原生 DDC/CI 亮度支持依赖 GPU 驱动实现 DXGK_BRIGHTNESS_INTERFACE_3，NVIDIA 驱动目前不实现 DXGK_BRIGHTNESS_INTERFACE_3 来支持外接显示器的 DDC/CI 亮度控制。这是 NVIDIA 驱动层面的缺失，不是我们能解决的。
+
 # DDCBrightness - Windows 外置显示器亮度驱动
 
 通过 DDC/CI 协议使 Windows 内置亮度滑块能够控制外置显示器亮度。
 
 ## 快速安装 (用户)
 
-从 [Releases](../../releases) 页面下载最新的 `DDCBrightness-Setup.msi`，以管理员身份运行即可。
+不提供安装。
 
 ### 安装步骤
 
@@ -22,7 +25,7 @@
    然后重启计算机
 5. 重启后 Windows 快捷设置中出现亮度滑块
 
-> **注意**: 当前版本使用测试签名，桌面右下角会显示「测试模式」水印。正式签名版本将在后续发布。
+> **注意**: 当前版本使用测试签名，桌面右下角会显示「测试模式」水印。
 
 ### 前置条件
 
