@@ -14,6 +14,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <strsafe.h>
+#include <wtsapi32.h>
+#include <userenv.h>
+
+#pragma comment(lib, "wtsapi32.lib")
+#pragma comment(lib, "userenv.lib")
 
 #pragma comment(lib, "dxva2.lib")
 #pragma comment(lib, "user32.lib")
@@ -395,19 +400,123 @@ static void BrightnessControlLoop(HANDLE hDriver)
 }
 
 //
+// 在用户会话中启动辅助进程 (解决 Session 0 无法枚举显示器的问题)
+// 服务 (Session 0) 通过此函数在用户的交互式会话中启动自身的 console 模式
+//
+static BOOL LaunchInUserSession()
+{
+    DWORD sessionId = WTSGetActiveConsoleSessionId();
+    if (sessionId == 0xFFFFFFFF) {
+        LogError("no active console session found");
+        return FALSE;
+    }
+
+    HANDLE hToken = NULL;
+    if (!WTSQueryUserToken(sessionId, &hToken)) {
+        LogError("WTSQueryUserToken failed, error: %lu", GetLastError());
+        return FALSE;
+    }
+
+    HANDLE hDupToken = NULL;
+    if (!DuplicateTokenEx(hToken, MAXIMUM_ALLOWED, NULL,
+                           SecurityIdentification, TokenPrimary, &hDupToken)) {
+        LogError("DuplicateTokenEx failed, error: %lu", GetLastError());
+        CloseHandle(hToken);
+        return FALSE;
+    }
+
+    LPVOID pEnv = NULL;
+    CreateEnvironmentBlock(&pEnv, hDupToken, FALSE);
+
+    WCHAR exePath[MAX_PATH];
+    GetModuleFileNameW(NULL, exePath, MAX_PATH);
+
+    // 以 "--session-worker" 参数启动，标记为会话内工作进程
+    WCHAR cmdLine[MAX_PATH + 64];
+    StringCchPrintfW(cmdLine, _countof(cmdLine), L"\"%s\" --session-worker", exePath);
+
+    STARTUPINFOW si = {};
+    si.cb = sizeof(si);
+    si.lpDesktop = (LPWSTR)L"winsta0\\default";
+    PROCESS_INFORMATION pi = {};
+
+    BOOL ok = CreateProcessAsUserW(
+        hDupToken,
+        NULL,
+        cmdLine,
+        NULL, NULL,
+        FALSE,
+        CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
+        pEnv,
+        NULL,
+        &si,
+        &pi
+    );
+
+    if (ok) {
+        LogInfo("launched session worker in session %lu, PID %lu",
+                sessionId, pi.dwProcessId);
+
+        // 等待辅助进程结束或服务停止
+        HANDLE waitHandles[2] = { pi.hProcess, g_StopEvent };
+        DWORD waitResult = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
+        if (waitResult == WAIT_OBJECT_0 + 1) {
+            // 服务停止，终止辅助进程
+            TerminateProcess(pi.hProcess, 0);
+        }
+
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    } else {
+        LogError("CreateProcessAsUser failed, error: %lu", GetLastError());
+    }
+
+    if (pEnv) DestroyEnvironmentBlock(pEnv);
+    CloseHandle(hDupToken);
+    CloseHandle(hToken);
+
+    return ok;
+}
+
+//
 // 服务工作线程
 //
 static DWORD WINAPI ServiceWorkerThread(LPVOID lpParam)
 {
     UNREFERENCED_PARAMETER(lpParam);
 
-    LogInfo("服务工作线程启动");
+    LogInfo("service worker thread started");
 
-    // 等待一下让系统稳定 (驱动加载后显示器枚举需要时间)
+    // 检测是否在 Session 0 (服务模式)
+    DWORD currentSession = 0;
+    ProcessIdToSessionId(GetCurrentProcessId(), &currentSession);
+    LogInfo("running in session %lu", currentSession);
+
+    // 等待系统稳定
     Sleep(2000);
 
-    // 步骤 1: 枚举 DDC/CI 显示器
+    // 尝试枚举显示器
     DWORD monitorCount = EnumerateMonitors();
+    if (monitorCount == 0 && currentSession == 0) {
+        // Session 0 无法枚举显示器, 启动用户会话辅助进程
+        LogInfo("Session 0: no monitors found, launching user session worker...");
+
+        // 等待用户登录
+        while (WaitForSingleObject(g_StopEvent, 5000) == WAIT_TIMEOUT) {
+            if (WTSGetActiveConsoleSessionId() != 0xFFFFFFFF) {
+                Sleep(3000); // 等待用户会话完全初始化
+                if (LaunchInUserSession()) {
+                    return 0; // 辅助进程已接管工作
+                }
+                LogError("failed to launch session worker, retrying in 30s...");
+            }
+            if (WaitForSingleObject(g_StopEvent, 30000) != WAIT_TIMEOUT) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
     if (monitorCount == 0) {
         LogInfo("未发现 DDC/CI 显示器, 5秒后重试...");
         Sleep(5000);
@@ -715,6 +824,10 @@ int wmain(int argc, wchar_t *argv[])
         if (_wcsicmp(argv[1], L"console") == 0 ||
             _wcsicmp(argv[1], L"/console") == 0 ||
             _wcsicmp(argv[1], L"debug") == 0) {
+            return RunConsoleMode();
+        }
+        if (_wcsicmp(argv[1], L"--session-worker") == 0) {
+            // 由服务在用户会话中启动的辅助进程模式
             return RunConsoleMode();
         }
 

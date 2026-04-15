@@ -66,12 +66,12 @@ DisplayName    = %ServiceDesc%
 ServiceType    = 1                  ; SERVICE_KERNEL_DRIVER
 StartType      = 3                  ; SERVICE_DEMAND_START (由 PnP 管理)
 ErrorControl   = 1                  ; SERVICE_ERROR_NORMAL
-ServiceBinary  = %13%\DDCBrightness.sys
+ServiceBinary  = %12%\DDCBrightness.sys
 
 ;
 ; WDF 共同安装程序节
 ;
-[DDCBrightness.NTamd64.Wdf]
+[DefaultInstall.NTamd64.Wdf]
 KmdfService = DDCBrightness, DDCBrightness.WdfSection
 
 [DDCBrightness.WdfSection]
