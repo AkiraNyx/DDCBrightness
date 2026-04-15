@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  DDCBrightness WiX v5 安装包定义
+
+  安装内容:
+  1. DDCBrightness.sys 驱动文件
+  2. DDCBrightness.inf 驱动安装配置
+  3. DDCBrightnessService.exe 用户态服务
+  4. ddc_test.exe DDC/CI 测试工具
+  5. 测试证书 (如有)
+
+  安装动作:
+  1. 复制文件到 Program Files
+  2. 安装测试证书到受信任的根证书存储
+  3. 使用 pnputil 安装驱动
+  4. 添加 UpperFilters 注册表项
+  5. 安装并启动 Windows 服务
+-->
+
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="DDCBrightness"
+           Manufacturer="DDCBrightness Project"
+           Version="!(bind.fileVersion.DriverSys)"
+           UpgradeCode="E7A1B2C3-D4E5-F6A7-B8C9-D0E1F2A3B4C5"
+           Scope="perMachine"
+           InstallerVersion="500">
+
+    <SummaryInformation Description="DDC/CI 外置显示器亮度驱动" />
+
+    <!-- 需要管理员权限 -->
+    <Launch Condition="Privileged"
+            Message="安装此程序需要管理员权限。请右键以管理员身份运行。" />
+
+    <!-- 仅支持 64 位系统 -->
+    <Launch Condition="VersionNT64"
+            Message="DDCBrightness 仅支持 64 位 Windows 系统。" />
+
+    <!-- 仅支持 Windows 10+ -->
+    <Launch Condition="VersionNT &gt;= 603"
+            Message="DDCBrightness 需要 Windows 10 或更高版本。" />
+
+    <!-- 升级策略: 移除旧版本 -->
+    <MajorUpgrade DowngradeErrorMessage="已安装更新的版本。"
+                  Schedule="afterInstallInitialize" />
+
+    <!-- 安装目录 -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="DDCBrightness">
+        <Directory Id="DriversFolder" Name="drivers" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- 主要组件 -->
+    <ComponentGroup Id="MainComponents">
+
+      <!-- 驱动文件 -->
+      <Component Id="DriverSysComponent" Directory="DriversFolder" Bitness="always64">
+        <File Id="DriverSys"
+              Source="$(BuildDir)\DDCBrightness.sys"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- 驱动 INF 文件 -->
+      <Component Id="DriverInfComponent" Directory="DriversFolder" Bitness="always64">
+        <File Id="DriverInf"
+              Source="$(InfFile)"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- 用户态服务 -->
+      <Component Id="ServiceExeComponent" Directory="INSTALLFOLDER" Bitness="always64">
+        <File Id="ServiceExe"
+              Source="$(BuildDir)\DDCBrightnessService.exe"
+              KeyPath="yes" />
+
+        <!-- 安装 Windows 服务 -->
+        <ServiceInstall Id="DDCBrtServiceInstall"
+                        Name="DDCBrightnessService"
+                        DisplayName="DDC/CI Brightness Control Service"
+                        Description="通过 DDC/CI 协议控制外置显示器亮度"
+                        Type="ownProcess"
+                        Start="auto"
+                        ErrorControl="normal"
+                        Account="LocalSystem" />
+
+        <ServiceControl Id="DDCBrtServiceControl"
+                        Name="DDCBrightnessService"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="yes" />
+      </Component>
+
+      <!-- DDC/CI 测试工具 -->
+      <Component Id="TestToolComponent" Directory="INSTALLFOLDER" Bitness="always64">
+        <File Id="TestToolExe"
+              Source="$(BuildDir)\ddc_test.exe"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- 注册上层过滤驱动 -->
+      <Component Id="UpperFilterComponent" Directory="INSTALLFOLDER" Bitness="always64">
+        <RegistryValue Id="UpperFiltersReg"
+                       Root="HKLM"
+                       Key="SYSTEM\CurrentControlSet\Control\Class\{4d36e96e-e325-11ce-bfc1-08002be10318}"
+                       Name="UpperFilters"
+                       Type="multiString"
+                       Value="DDCBrightness"
+                       Action="append"
+                       KeyPath="yes" />
+      </Component>
+
+    </ComponentGroup>
+
+    <!-- 测试证书组件 (可选) -->
+    <ComponentGroup Id="CertComponents">
+      <Component Id="TestCertComponent" Directory="DriversFolder" Bitness="always64">
+        <File Id="TestCert"
+              Source="$(CertFile)"
+              KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Feature 定义 -->
+    <Feature Id="MainFeature" Title="DDCBrightness" Level="1">
+      <ComponentGroupRef Id="MainComponents" />
+      <ComponentGroupRef Id="CertComponents" />
+    </Feature>
+
+    <!-- 自定义动作 -->
+
+    <!-- 安装驱动 (使用 pnputil) -->
+    <SetProperty Id="InstallDriver"
+                 Before="InstallDriver"
+                 Sequence="execute"
+                 Value="&quot;[SystemFolder]pnputil.exe&quot; /add-driver &quot;[DriversFolder]DDCBrightness.inf&quot; /install" />
+
+    <CustomAction Id="InstallDriver"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Impersonate="no"
+                  BinaryRef="Wix4UtilCA_X86" />
+
+    <!-- 安装测试证书到受信任的根证书存储 -->
+    <SetProperty Id="InstallCert"
+                 Before="InstallCert"
+                 Sequence="execute"
+                 Value="&quot;[SystemFolder]certutil.exe&quot; -addstore TrustedPublisher &quot;[DriversFolder]DDCBrightness-test.cer&quot;" />
+
+    <CustomAction Id="InstallCert"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Impersonate="no"
+                  BinaryRef="Wix4UtilCA_X86" />
+
+    <!-- 卸载驱动 -->
+    <SetProperty Id="UninstallDriver"
+                 Before="UninstallDriver"
+                 Sequence="execute"
+                 Value="&quot;[SystemFolder]pnputil.exe&quot; /delete-driver DDCBrightness.inf /uninstall" />
+
+    <CustomAction Id="UninstallDriver"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Impersonate="no"
+                  BinaryRef="Wix4UtilCA_X86"
+                  Return="ignore" />
+
+    <!-- 安装序列 -->
+    <InstallExecuteSequence>
+      <Custom Action="InstallCert" After="InstallFiles" Condition="NOT REMOVE" />
+      <Custom Action="InstallDriver" After="InstallCert" Condition="NOT REMOVE" />
+      <Custom Action="UninstallDriver" Before="RemoveFiles" Condition="REMOVE" />
+    </InstallExecuteSequence>
+
+    <!-- 基本 UI -->
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+
+    <!-- 许可证 -->
+    <WixVariable Id="WixUILicenseRtf" Value="installer\License.rtf" />
+
+  </Package>
+</Wix>

@@ -1,0 +1,180 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  SOLUTION_FILE: DDCBrightness/DDCBrightness.sln
+  BUILD_CONFIGURATION: Release
+  BUILD_PLATFORM: x64
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Install WDK
+      run: |
+        # 下载并安装 WDK (Windows Driver Kit)
+        $wdkUrl = "https://go.microsoft.com/fwlink/?linkid=2249371"
+        $wdkInstaller = "$env:TEMP\wdksetup.exe"
+        Write-Host "下载 WDK..."
+        Invoke-WebRequest -Uri $wdkUrl -OutFile $wdkInstaller
+        Write-Host "安装 WDK..."
+        Start-Process -FilePath $wdkInstaller -ArgumentList "/quiet", "/norestart" -Wait
+        Write-Host "WDK 安装完成"
+
+        # 安装 WDK VS 扩展
+        $vsixPath = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Vsix\*\WDK.vsix" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($vsixPath) {
+          $vsixInstaller = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property enginePath
+          $vsixInstaller = Join-Path (Split-Path $vsixInstaller) "VSIXInstaller.exe"
+          Start-Process -FilePath $vsixInstaller -ArgumentList "/q", $vsixPath.FullName -Wait
+          Write-Host "WDK VSIX 已安装"
+        }
+      shell: pwsh
+
+    - name: Install WiX Toolset
+      run: |
+        dotnet tool install --global wix --version 5.*
+        Write-Host "WiX Toolset 已安装"
+      shell: pwsh
+
+    - name: Create test certificate
+      run: |
+        # 创建自签名测试证书
+        $cert = New-SelfSignedCertificate `
+          -Type CodeSigningCert `
+          -Subject "CN=DDCBrightness Test, O=DDCBrightness Project" `
+          -CertStoreLocation Cert:\CurrentUser\My `
+          -NotAfter (Get-Date).AddYears(3)
+
+        $thumbprint = $cert.Thumbprint
+        Write-Host "证书指纹: $thumbprint"
+        echo "CERT_THUMBPRINT=$thumbprint" >> $env:GITHUB_ENV
+
+        # 导出证书 (用于安装包)
+        $certPath = "DDCBrightness\build\DDCBrightness-test.cer"
+        New-Item -ItemType Directory -Path "DDCBrightness\build" -Force | Out-Null
+        Export-Certificate -Cert "Cert:\CurrentUser\My\$thumbprint" -FilePath $certPath
+        Write-Host "证书已导出到 $certPath"
+      shell: pwsh
+
+    - name: Build driver
+      run: |
+        msbuild DDCBrightness\driver\DDCBrightness.vcxproj `
+          /p:Configuration=${{ env.BUILD_CONFIGURATION }} `
+          /p:Platform=${{ env.BUILD_PLATFORM }} `
+          /p:SignMode=TestSign `
+          /p:TestCertificate=${{ env.CERT_THUMBPRINT }}
+      shell: pwsh
+
+    - name: Build service
+      run: |
+        msbuild DDCBrightness\service\DDCBrightnessService.vcxproj `
+          /p:Configuration=${{ env.BUILD_CONFIGURATION }} `
+          /p:Platform=${{ env.BUILD_PLATFORM }}
+      shell: pwsh
+
+    - name: Build test tool
+      run: |
+        msbuild DDCBrightness\tools\DDCTest.vcxproj `
+          /p:Configuration=${{ env.BUILD_CONFIGURATION }} `
+          /p:Platform=${{ env.BUILD_PLATFORM }}
+      shell: pwsh
+
+    - name: Sign driver
+      run: |
+        $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+        if (-not $signtool) {
+          Write-Error "signtool.exe 未找到"
+          exit 1
+        }
+        Write-Host "使用 signtool: $($signtool.FullName)"
+
+        $driverSys = "DDCBrightness\build\${{ env.BUILD_CONFIGURATION }}\${{ env.BUILD_PLATFORM }}\DDCBrightness.sys"
+
+        & $signtool.FullName sign /s My /n "DDCBrightness Test" /fd SHA256 $driverSys
+        Write-Host "驱动已签名"
+      shell: pwsh
+
+    - name: Build MSI installer
+      run: |
+        $buildDir = "DDCBrightness\build\${{ env.BUILD_CONFIGURATION }}\${{ env.BUILD_PLATFORM }}"
+
+        wix build DDCBrightness\installer\Package.wxs `
+          -d BuildDir="$buildDir" `
+          -d CertFile="DDCBrightness\build\DDCBrightness-test.cer" `
+          -d InfFile="DDCBrightness\driver\DDCBrightness.inf" `
+          -d Version="1.0.0.0" `
+          -arch x64 `
+          -o "$buildDir\DDCBrightness-Setup.msi"
+
+        Write-Host "MSI 安装包已生成"
+      shell: pwsh
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: DDCBrightness-${{ env.BUILD_CONFIGURATION }}-${{ env.BUILD_PLATFORM }}
+        path: |
+          DDCBrightness/build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/DDCBrightness.sys
+          DDCBrightness/build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/DDCBrightnessService.exe
+          DDCBrightness/build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/ddc_test.exe
+          DDCBrightness/build/${{ env.BUILD_CONFIGURATION }}/${{ env.BUILD_PLATFORM }}/DDCBrightness-Setup.msi
+          DDCBrightness/build/DDCBrightness-test.cer
+          DDCBrightness/driver/DDCBrightness.inf
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: DDCBrightness-Release-x64
+        path: release-files
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        name: DDCBrightness ${{ github.ref_name }}
+        draft: true
+        generate_release_notes: true
+        files: |
+          release-files/**/*.msi
+          release-files/**/*.exe
+          release-files/**/*.sys
+          release-files/**/*.cer
+          release-files/**/*.inf
+        body: |
+          ## DDCBrightness ${{ github.ref_name }}
+
+          通过 DDC/CI 协议使 Windows 内置亮度滑块控制外置显示器。
+
+          ### 安装说明
+
+          1. 下载 `DDCBrightness-Setup.msi`
+          2. 以管理员身份运行安装程序
+          3. 按提示启用测试签名模式并重启
+          4. 重启后亮度滑块即可在 Windows 快捷设置中使用
+
+          > **注意**: 当前版本使用测试签名，安装后桌面右下角会显示「测试模式」水印。
+
+          ### 前置要求
+          - Windows 10/11 x64
+          - 外置显示器需支持 DDC/CI

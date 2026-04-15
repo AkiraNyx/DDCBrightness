@@ -1,0 +1,86 @@
+;
+; DDCBrightness.inf - KMDF 上层过滤驱动安装文件
+;
+; 为 Monitor 设备类安装上层过滤驱动,
+; 注册亮度设备接口使 Windows 显示亮度滑块
+;
+
+[Version]
+Signature   = "$Windows NT$"
+Class       = Monitor
+ClassGuid   = {4d36e96e-e325-11ce-bfc1-08002be10318}
+Provider    = %ManufacturerName%
+CatalogFile = DDCBrightness.cat
+DriverVer   = 04/15/2026,1.0.0.0
+PnpLockdown = 1
+
+[DestinationDirs]
+DefaultDestDir          = 13  ; Driver Store
+DDCBrightness.CopyFiles = 13
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+DDCBrightness.sys = 1,,
+
+;
+; 默认安装节
+;
+[DefaultInstall.NTamd64]
+CopyFiles = DDCBrightness.CopyFiles
+AddReg    = DDCBrightness.AddReg
+
+[DefaultInstall.NTamd64.Services]
+AddService = DDCBrightness,,DDCBrightness.Service
+
+;
+; 作为类过滤驱动安装 (适用于所有 Monitor 类设备)
+;
+[ClassInstall32.NTamd64]
+AddReg = DDCBrightness.ClassFilter.AddReg
+
+[DDCBrightness.ClassFilter.AddReg]
+; 将 DDCBrightness 添加为 Monitor 类的上层过滤驱动
+HKLM,System\CurrentControlSet\Control\Class\{4d36e96e-e325-11ce-bfc1-08002be10318},UpperFilters,0x00010008,DDCBrightness
+
+;
+; 文件复制
+;
+[DDCBrightness.CopyFiles]
+DDCBrightness.sys
+
+;
+; 注册表配置
+;
+[DDCBrightness.AddReg]
+; 驱动参数
+HKR,Parameters,BrightnessLevels,0x00010001,101
+HKR,Parameters,DefaultBrightness,0x00010001,50
+
+;
+; 服务配置
+;
+[DDCBrightness.Service]
+DisplayName    = %ServiceDesc%
+ServiceType    = 1                  ; SERVICE_KERNEL_DRIVER
+StartType      = 3                  ; SERVICE_DEMAND_START (由 PnP 管理)
+ErrorControl   = 1                  ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %13%\DDCBrightness.sys
+
+;
+; WDF 共同安装程序节
+;
+[DDCBrightness.NTamd64.Wdf]
+KmdfService = DDCBrightness, DDCBrightness.WdfSection
+
+[DDCBrightness.WdfSection]
+KmdfLibraryVersion = 1.33
+
+;
+; 字符串
+;
+[Strings]
+ManufacturerName = "DDCBrightness Project"
+DiskName         = "DDCBrightness 驱动安装盘"
+ServiceDesc      = "DDC/CI Brightness Filter Driver"
