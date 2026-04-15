@@ -15,8 +15,8 @@ DriverVer   = 04/15/2026,1.0.0.0
 PnpLockdown = 1
 
 [DestinationDirs]
-DefaultDestDir          = 13  ; Driver Store
-DDCBrightness.CopyFiles = 13
+DefaultDestDir          = 12  ; System32\drivers
+DDCBrightness.CopyFiles = 12
 
 [SourceDisksNames]
 1 = %DiskName%,,,""
