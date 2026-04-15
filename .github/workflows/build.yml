@@ -118,8 +118,8 @@ jobs:
     - name: Install WiX Toolset
       run: |
         dotnet tool install --global wix --version 5.*
-        wix extension add WixToolset.UI.wixext
-        wix extension add WixToolset.Util.wixext
+        wix extension add WixToolset.UI.wixext/5.*
+        wix extension add WixToolset.Util.wixext/5.*
       shell: pwsh
 
     - name: Create test certificate
