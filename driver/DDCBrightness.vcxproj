@@ -46,8 +46,8 @@
 
   <!-- 输出配置: 生成 .sys 文件 -->
   <PropertyGroup>
-    <OutDir>$(SolutionDir)build\$(Configuration)\$(Platform)\</OutDir>
-    <IntDir>$(SolutionDir)build\intermediate\$(ProjectName)\$(Configuration)\$(Platform)\</IntDir>
+    <OutDir>$(ProjectDir)..\build\$(Configuration)\$(Platform)\</OutDir>
+    <IntDir>$(ProjectDir)..\build\intermediate\$(ProjectName)\$(Configuration)\$(Platform)\</IntDir>
     <TargetName>DDCBrightness</TargetName>
     <TargetExt>.sys</TargetExt>
     <GenerateManifest>false</GenerateManifest>

@@ -40,8 +40,8 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
 
   <PropertyGroup>
-    <OutDir>$(SolutionDir)build\$(Configuration)\$(Platform)\</OutDir>
-    <IntDir>$(SolutionDir)build\intermediate\$(ProjectName)\$(Configuration)\$(Platform)\</IntDir>
+    <OutDir>$(ProjectDir)..\build\$(Configuration)\$(Platform)\</OutDir>
+    <IntDir>$(ProjectDir)..\build\intermediate\$(ProjectName)\$(Configuration)\$(Platform)\</IntDir>
     <TargetName>DDCBrightnessService</TargetName>
   </PropertyGroup>
 
